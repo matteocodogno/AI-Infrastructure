@@ -1,0 +1,23 @@
+#!/bin/bash
+# Pre-commit hook for AI4Dev projects
+
+echo "🔍 Scanning for secrets with gitleaks..."
+
+# Run gitleaks on staged files
+if ! gitleaks protect --staged --config="$HOME/.config/gitleaks/gitleaks.toml" --verbose; then
+    echo ""
+    echo "❌ COMMIT REJECTED: Secrets detected!"
+    echo ""
+    echo "💡 To fix:"
+    echo "   1. Remove the secret from your code"
+    echo "   2. Move it to .envrc or Infisical"
+    echo "   3. Add .envrc to .gitignore"
+    echo ""
+    echo "⚠️  If this is a false positive, add to .gitleaksignore:"
+    echo "   echo 'path/to/file:line_number' >> .gitleaksignore"
+    echo ""
+    exit 1
+fi
+
+echo "✅ No secrets detected"
+exit 0
