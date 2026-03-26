@@ -1,0 +1,32 @@
+# Environment variables
+.env.local
+.env*.local
+.env.cached
+
+# Docker volumes
+langfuse_postgres_data/
+langfuse_clickhouse_data/
+langfuse_clickhouse_logs/
+langfuse_minio_data/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+credentials.json
+secrets/
+.infisical.json
