@@ -1,0 +1,155 @@
+#!/bin/bash
+# Global AI infrastructure management
+
+AI_DIR="$HOME/.ai"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+function load_secrets() {
+    cd "$AI_DIR" || exit
+
+    # Load .envrc variables
+    [[ -f .envrc ]] && source .envrc
+}
+
+case "$1" in
+  start)
+    echo "🚀 Starting AI infrastructure..."
+    load_secrets
+
+    # Start services
+    docker compose up -d
+
+    echo "⏳ Waiting for services to be healthy..."
+    sleep 10
+
+    # Health check
+    docker compose ps
+
+    echo ""
+    echo "✅ AI Infrastructure started:"
+    echo "   LiteLLM:     http://localhost:4000"
+    echo "   Langfuse:    http://localhost:3000"
+    echo "   MinIO:       http://localhost:9090"
+    echo "   ClickHouse:  http://localhost:8123"
+    echo "   Postgres:    localhost:5432"
+    echo ""
+    echo "Default credentials:"
+    echo "   Langfuse: matteo.codogno@welld.ch / (from LANGFUSE_USER_PASSWORD)"
+    echo "   MinIO:    minio / miniosecret"
+    ;;
+
+  stop)
+    load_secrets
+    docker compose down
+    echo "✅ AI Infrastructure stopped"
+    ;;
+
+  restart)
+    load_secrets
+    docker compose restart "$2"
+    echo "✅ Restarted ${2:-all services}"
+    ;;
+
+  logs)
+    load_secrets
+    docker compose logs -f "${2:-litellm}"
+    ;;
+
+  status)
+    # Check LiteLLM
+    echo -e "${BLUE}Service Health${NC}"
+    if curl -s http://localhost:4000/health > /dev/null 2>&1; then
+        echo -e "  ✅ LiteLLM (port 4000)"
+    else
+        echo -e "  ❌ LiteLLM (port 4000)"
+    fi
+
+    # Check Langfuse
+    if curl -s http://localhost:3000 > /dev/null 2>&1; then
+        echo -e "  ✅ Langfuse (port 3000)"
+    else
+        echo -e "  ❌ Langfuse (port 3000)"
+    fi
+
+    # Check PostgreSQL
+    if nc -z localhost 5432 2>/dev/null; then
+        echo -e "  ✅ PostgreSQL (port 5432)"
+    else
+        echo -e "  ❌ PostgreSQL (port 5432)"
+    fi
+    ;;
+
+  ps)
+    load_secrets
+    docker compose ps
+    ;;
+
+  test)
+    load_secrets
+    echo "🧪 Testing LiteLLM connection..."
+    curl -X POST http://localhost:4000/chat/completions \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+      -d '{
+        "model": "writer",
+        "messages": [{"role": "user", "content": "Say hello from AI4Dev!"}],
+        "metadata": {"test": true}
+      }' | jq .
+    ;;
+
+  cost)
+    load_secrets
+    echo "💰 Cost summary (last 24h):"
+
+    #Calculate timestamps for last 24 hours
+    FROM_TIME=$(date -u -v-24H +"%Y-%m-%dT%H:%M:%S.000Z")
+    TO_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+
+    # Query Langfuse API for costs
+    curl -s "http://localhost:3000/api/public/metrics" \
+      -u "${LANGFUSE_PUBLIC_KEY}:${LANGFUSE_SECRET_KEY}" \
+      -G \
+      --data-urlencode "query={
+        \"view\":\"observations\",
+        \"metrics\":[{\"measure\":\"totalCost\",\"aggregation\":\"sum\"}],
+        \"fromTimestamp\":\"${FROM_TIME}\",
+        \"toTimestamp\":\"${TO_TIME}\"}" | jq .
+    ;;
+
+  reset)
+    echo "⚠️  This will delete ALL data. Are you sure? (y/N)"
+    read -r confirm
+    if [ "$confirm" = "y" ]; then
+      cd "$AI_DIR"
+      docker compose down -v
+      echo "✅ All data deleted. Run 'ai start' to reinitialize."
+    fi
+    ;;
+
+  *)
+    echo "AI Infrastructure Management"
+    echo ""
+    echo "Usage: ai {command} [options]"
+    echo ""
+    echo "Commands:"
+    echo "  start          Start all services"
+    echo "  stop           Stop all services"
+    echo "  restart [svc]  Restart service (or all)"
+    echo "  logs [svc]     View logs (default: litellm)"
+    echo "  ps             Show service status"
+    echo "  test           Test LiteLLM connection"
+    echo "  cost           Show cost summary"
+    echo "  reset          Delete all data and reset"
+    echo ""
+    echo "Examples:"
+    echo "  ai start"
+    echo "  ai logs langfuse-web"
+    echo "  ai restart litellm"
+    ;;
+esac
